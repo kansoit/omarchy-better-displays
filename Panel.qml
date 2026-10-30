@@ -1421,6 +1421,8 @@ Panel {
     }
     onRunningChanged: {
       if (running) {
+        // A fresh query must never inherit the previous one's timeout.
+        root.stateTimedOut = false
         stateWatchdog.restart()
         return
       }
