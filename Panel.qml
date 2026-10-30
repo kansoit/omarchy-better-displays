@@ -62,6 +62,7 @@ Panel {
   property bool stateRefreshQueued: false
   property string stateRefreshQueuedReason: ""
   property bool stateProcHotplugScan: false
+  property bool stateTimedOut: false
   property double scanEventAt: 0
   property string scanRestorePermission: "block"
   property bool autoRestoreOwnsBusy: false
@@ -1394,6 +1395,12 @@ Panel {
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
+        // A killed state query may have delivered only a partial stream. Keep
+        // the last coherent state instead of parsing truncated JSON lines.
+        if (root.stateTimedOut) {
+          root.stateTimedOut = false
+          return
+        }
         var lines = String(text || "").split("\n")
         var brightness = String(lines[0] || "").trim()
         root.brightnessAvailable = brightness !== "unavailable" && brightness !== ""
@@ -1413,12 +1420,39 @@ Panel {
       }
     }
     onRunningChanged: {
+      if (running) {
+        stateWatchdog.restart()
+        return
+      }
+      stateWatchdog.stop()
+      stateKillDelay.stop()
       if (running || !root.stateRefreshQueued) return
       var queuedReason = root.stateRefreshQueuedReason || "poll"
       root.stateRefreshQueued = false
       root.stateRefreshQueuedReason = ""
       Qt.callLater(function() { root.refresh(queuedReason) })
     }
+  }
+
+  // EDID decoding, node profile matching, or a compositor query should never
+  // block every later refresh forever. Stop a stuck state collection and let
+  // the normal queued-refresh path try again on the next cycle.
+  Timer {
+    id: stateWatchdog
+    interval: 12000
+    repeat: false
+    onTriggered: {
+      if (!stateProc.running) return
+      root.stateTimedOut = true
+      stateProc.signal(15)
+      stateKillDelay.restart()
+    }
+  }
+  Timer {
+    id: stateKillDelay
+    interval: 1000
+    repeat: false
+    onTriggered: if (stateProc.running) stateProc.signal(9)
   }
 
   Timer {
