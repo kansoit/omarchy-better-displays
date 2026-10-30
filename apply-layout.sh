@@ -138,7 +138,7 @@ apply_payload() {
   for lua_code in "$lua_code" "$mirror_code"; do
     [[ -n $lua_code ]] || continue
     # hyprctl eval prints Lua errors on stdout, so keep both streams.
-  if ! error=$(hyprctl eval "$lua_code" 2>&1); then
+    if ! error=$(hyprctl eval "$lua_code" 2>&1); then
       jq -cn --arg detail "$error" \
         '[{code: "compositor-rejected", output: "", detail: $detail}]' >&2
       return 1
